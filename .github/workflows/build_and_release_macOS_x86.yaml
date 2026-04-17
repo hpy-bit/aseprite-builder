@@ -7,6 +7,7 @@ on:
     paths:
       - 'BuildLog.md'
   workflow_dispatch:
+
 env:
   BUILD_TYPE: Release
 
@@ -22,9 +23,9 @@ jobs:
         id: aseprite-link
         uses: a1393323447/fetch-release@main
         with:
-            group: aseprite
-            repo: aseprite
-            match: Aseprite-.*?-Source.zip
+          group: aseprite
+          repo: aseprite
+          match: Aseprite-.*?-Source.zip
 
   create-release:
     name: Create Release
@@ -36,11 +37,11 @@ jobs:
       download-link: ${{ needs.fetch-aseprite-info.outputs.download-link }}
       release-tag: ${{ needs.fetch-aseprite-info.outputs.release-tag }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.fetch-aseprite-info.outputs.release-tag }}
-          body: Aseprite-${{ needs.fetch-aseprite-info.outputs.release-tag }}
+          body: Aseprite ${{ needs.fetch-aseprite-info.outputs.release-tag }}
           skipIfReleaseExists: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -51,69 +52,79 @@ jobs:
       contents: write
     runs-on: ${{ matrix.os }}
     strategy:
-        matrix:
-          os: [ macOS-13 ]
-        fail-fast: false
+      matrix:
+        os: [macOS-13]
+      fail-fast: false
+    env:
+      enable_ccache: 'off'
+      laf_backend: 'skia'
+      enable_scripting: 'on'
+      skia_arch: 'x64'
+
     steps:
-      - name: Install Dependencies
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y \
-            libpixman-1-dev libfreetype6-dev libharfbuzz-dev zlib1g-dev \
-            libx11-dev libxcursor-dev libxi-dev libgl1-mesa-dev libfontconfig1-dev
       - uses: actions/checkout@v4
-      - name: Install Aseprite
+
+      # 安装 7zip（macOS 环境需要）
+      - name: Install 7zip
+        run: brew install p7zip
+
+      - name: Clone Aseprite
         shell: bash
         run: |
           git clone --recurse-submodules -j8 https://github.com/aseprite/aseprite --branch ${{ needs.create-release.outputs.release-tag }}
+
       - name: Install Skia
         working-directory: aseprite
         shell: bash
         run: |
           wget https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-macOS-Release-x64.zip
           unzip Skia-macOS-Release-x64.zip -d skia
+
       - uses: aseprite/get-ninja@main
+
       - name: Generating Makefiles
         shell: bash
         working-directory: aseprite
         run: |
-          export enable_ccache=off
-          export laf_backend=skia
-          export enable_scripting=on
-
-          export skia_arch=x64
-
           cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=10.9 \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
             -DENABLE_TESTS=OFF \
-            -DENABLE_SCRIPTING=$enable_scripting \
-            -DENABLE_CCACHE=$enable_ccache \
-            -DLAF_BACKEND=$laf_backend \
+            -DENABLE_SCRIPTING=${{ env.enable_scripting }} \
+            -DENABLE_CCACHE=${{ env.enable_ccache }} \
+            -DLAF_BACKEND=${{ env.laf_backend }} \
             -DSKIA_DIR=$(realpath skia) \
             -DOPENSSL_USE_STATIC_LIBS=ON \
-            -DSKIA_LIBRARY_DIR=$(realpath skia/out/Release-$skia_arch)
+            -DSKIA_LIBRARY_DIR=$(realpath skia/out/Release-${{ env.skia_arch }})
+
       - name: Compiling
         shell: bash
         working-directory: aseprite
         run: |
-          cd build && ninja
+          ninja -C build
+
+      # 清理多余文件（只保留 app 和 data）
       - name: Clean Up Build folder
         working-directory: aseprite/build/bin
         shell: bash
-        run: find . -mindepth 1 ! \( -name 'aseprite' -o -name 'aseprite.exe' -o -name 'data' -prune -o -name 'Aseprite.app' -prune \) -exec rm -rf {} +
-      - name: Make portable zip
+        run: find . -mindepth 1 ! \( -name 'Aseprite.app' -prune -o -name 'data' -prune \) -exec rm -rf {} +
+
+      # 创建便携模式标记
+      - name: Make portable
         working-directory: aseprite/build/bin
-        run: echo '# This file is here so Aseprite behaves as a portable program' > aseprite.ini
-      - name: Create release
+        run: echo '# This file makes Aseprite portable' > aseprite.ini
+
+      # 压缩打包
+      - name: Make zip
         working-directory: aseprite/build/bin
-        run: 7z -tzip a Aseprite-${{ needs.create-release.outputs.release-tag }}-${{ runner.os }}.zip *
-      - name: Upload release
+        run: 7z a Aseprite-${{ needs.create-release.outputs.release-tag }}-macOS-x86.zip *
+
+      # 上传到 Release
+      - name: Upload release asset
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: aseprite/build/bin/Aseprite-${{ needs.create-release.outputs.release-tag }}-${{ runner.os }}.zip
-          asset_name: Aseprite-${{ needs.create-release.outputs.release-tag }}-${{ runner.os }}.zip
+          file: aseprite/build/bin/Aseprite-${{ needs.create-release.outputs.release-tag }}-macOS-x86.zip
+          asset_name: Aseprite-${{ needs.create-release.outputs.release-tag }}-macOS-x86.zip
           tag: ${{ needs.create-release.outputs.release-tag }}
+          overwrite: true
