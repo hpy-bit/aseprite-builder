@@ -1,5 +1,4 @@
 name: Build and release Aseprite (macOS x86)
-
 on:
   push:
     branches:
@@ -14,7 +13,7 @@ env:
 jobs:
   fetch-aseprite-info:
     name: Fetch deps info
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       download-link: ${{ steps.aseprite-link.outputs.download-link }}
       release-tag: ${{ steps.aseprite-link.outputs.release-tag }}
@@ -26,10 +25,10 @@ jobs:
           group: aseprite
           repo: aseprite
           match: Aseprite-.*?-Source.zip
-
+          
   create-release:
     name: Create Release
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: fetch-aseprite-info
     permissions:
       contents: write
@@ -50,7 +49,7 @@ jobs:
     needs: create-release
     permissions:
       contents: write
-    runs-on: ${{ matrix.os }}
+    runs-on: self-hosted
     strategy:
       matrix:
         os: [macOS-13]
