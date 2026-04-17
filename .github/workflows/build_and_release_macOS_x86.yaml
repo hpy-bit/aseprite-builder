@@ -49,7 +49,7 @@ jobs:
     needs: create-release
     permissions:
       contents: write
-    runs-on: ${{ matrix.os }}
+    runs-on: self-hosted
     strategy:
         matrix:
           os: [ macOS-13 ]
